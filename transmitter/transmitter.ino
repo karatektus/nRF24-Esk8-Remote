@@ -5,7 +5,7 @@
 #include "RF24.h"
 #include "VescUart.h"
 
-// #define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
   #define DEBUG_PRINT(x)  Serial.println (x)
@@ -15,7 +15,7 @@
 #endif
 
 // Defining the type of display used (128x32)
-U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0);
 
 static unsigned char logo_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x80, 0x3c, 0x01, 0xe0, 0x00, 0x07, 0x70, 0x18, 0x0e, 0x30, 0x18, 0x0c, 0x98, 0x99, 0x19, 0x80, 0xff, 0x01, 0x04, 0xc3, 0x20, 0x0c, 0x99, 0x30, 0xec, 0xa5, 0x37, 0xec, 0xa5, 0x37, 0x0c, 0x99, 0x30, 0x04, 0xc3, 0x20, 0x80, 0xff, 0x01, 0x98, 0x99, 0x19, 0x30, 0x18, 0x0c, 0x70, 0x18, 0x0e, 0xe0, 0x00, 0x07, 0x80, 0x3c, 0x01, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
@@ -399,7 +399,9 @@ boolean triggerActive() {
 // Function used to transmit the throttle value, and receive the VESC realtime data.
 void transmitToVesc() {
   // Transmit once every 50 millisecond
-  if (millis() - lastTransmission >= 50) {
+  int time = millis() - lastTransmission;
+  DEBUG_PRINT(time);
+  if (time >= 0) {
 
     lastTransmission = millis();
 
@@ -418,12 +420,12 @@ void transmitToVesc() {
       failCount = 0;
       sendSuccess = false;
 
-      DEBUG_PRINT("Transmission succes");
+      //DEBUG_PRINT("Transmission succes");
     } else {
       // Transmission was not a succes
       failCount++;
 
-      DEBUG_PRINT("Failed transmission");
+      //DEBUG_PRINT("Failed transmission");
     }
 
     // If lost more than 5 transmissions, we can assume that connection is lost.
@@ -529,49 +531,24 @@ void drawPage() {
   String suffix;
   String prefix;
 
-  int first, last;
-
   int x = 0;
   int y = 16;
 
-  // Rotate the realtime data each 4s.
-  if ((millis() - lastDataRotation) >= 4000) {
+  float speedinfo = ratioRpmSpeed * data.rpm;
+  drawInfo(x, y, speedinfo, "KMH", "SPEED", 1, 1);
+  drawDistance(x, y+32, ratioPulseDistance * data.tachometerAbs);
+  drawVoltage(x+64, y+32, data.inpVoltage);
 
-    lastDataRotation = millis();
-    displayData++;
+}
 
-    if (displayData > 2) {
-      displayData = 0;
-    }
-  }
+void drawInfo(int x,int y, float value, String suffix, String prefix, int decimals, float width) {
+   // Display prefix (title)
 
-  switch (displayData) {
-    case 0:
-      value = ratioRpmSpeed * data.rpm;
-      suffix = "KMH";
-      prefix = "SPEED";
-      decimals = 1;
-      break;
-    case 1:
-      value = ratioPulseDistance * data.tachometerAbs;
-      suffix = "KM";
-      prefix = "DISTANCE";
-      decimals = 2;
-      break;
-    case 2:
-      value = data.inpVoltage;
-      suffix = "V";
-      prefix = "BATTERY";
-      decimals = 1;
-      break;
-  }
-
-  // Display prefix (title)
   displayString = prefix;
   displayString.toCharArray(displayBuffer, 10);
   u8g2.setFont(u8g2_font_profont12_tr);
   u8g2.drawStr(x, y - 1, displayBuffer);
-
+  int first, last;
   // Split up the float value: a number, b decimals.
   first = abs(floor(value));
   last = value * pow(10, 3) - first * pow(10, 3);
@@ -586,20 +563,84 @@ void drawPage() {
   // Display numbers
   displayString.toCharArray(displayBuffer, 10);
   u8g2.setFont(u8g2_font_logisoso22_tn );
-  u8g2.drawStr(x + 55, y + 13, displayBuffer);
+  u8g2.drawStr(x + 55*width, y + 13, displayBuffer);
 
   // Display decimals
   displayString = "." + (String)last;
   displayString.toCharArray(displayBuffer, decimals + 2);
   u8g2.setFont(u8g2_font_profont12_tr);
-  u8g2.drawStr(x + 86, y - 1, displayBuffer);
+  u8g2.drawStr(x + 86*width, y - 1, displayBuffer);
 
   // Display suffix
   displayString = suffix;
   displayString.toCharArray(displayBuffer, 10);
   u8g2.setFont(u8g2_font_profont12_tr);
-  u8g2.drawStr(x + 86 + 2, y + 13, displayBuffer);
+  u8g2.drawStr(x + 86*width + 2, y + 1, displayBuffer);
+}
 
+void drawDistance(int x, int y, float distance){
+  // Split up the float value: a number, b decimals.
+  int first, last;
+  first = abs(floor(distance));
+  last = distance * pow(10, 3) - first * pow(10, 3);
+
+  // Add leading zero
+  if (first <= 9) {
+    displayString = "0" + (String)first;
+  } else {
+    displayString = (String)first;
+  }
+
+  // Display numbers
+  displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_logisoso22_tn );
+  u8g2.drawStr(x, y+13, displayBuffer);
+
+  // Display decimals
+  displayString = "." + (String)last;
+  displayString.toCharArray(displayBuffer, 2 + 2);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x +32, y, displayBuffer);
+
+  // Display suffix
+  displayString = "KM";
+  displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x + 32, y + 13, displayBuffer);
+  
+}
+
+
+void drawVoltage(int x, int y, float voltage){
+  // Split up the float value: a number, b decimals.
+  int first, last;
+  first = abs(floor(voltage));
+  last = voltage * pow(10, 3) - first * pow(10, 3);
+
+  // Add leading zero
+  if (first <= 9) {
+    displayString = "0" + (String)first;
+  } else {
+    displayString = (String)first;
+  }
+
+  // Display numbers
+  displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_logisoso22_tn );
+  u8g2.drawStr(x, y+13, displayBuffer);
+
+  // Display decimals
+  displayString = "." + (String)last;
+  displayString.toCharArray(displayBuffer, 2 + 2);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x+32, y, displayBuffer);
+
+ // Display suffix
+  displayString = "V";
+  displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x+ 32, y + 13, displayBuffer);
+  
 }
 
 void drawThrottle() {
